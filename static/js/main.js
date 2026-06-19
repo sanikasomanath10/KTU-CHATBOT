@@ -6,6 +6,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const clearBtn = document.getElementById('clear-btn');
     const uploadBtn = document.getElementById('upload-btn');
     const pdfUpload = document.getElementById('pdf-upload');
+    
+    // New elements for Answer Key feature
+    const generateKeyBtn = document.getElementById('generate-key-btn');
+    const qpaperUpload = document.getElementById('qpaper-upload');
+    const reviewModal = document.getElementById('review-modal');
+    const closeModalBtn = document.getElementById('close-modal-btn');
+    const downloadPdfBtn = document.getElementById('download-pdf-btn');
+    const answerKeyTextarea = document.getElementById('answer-key-textarea');
 
     // Prevent submitting empty messages
     userInput.addEventListener('input', () => {
@@ -105,6 +113,91 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Reset the input
         pdfUpload.value = '';
+    });
+
+    // Answer Key Logic
+    generateKeyBtn.addEventListener('click', () => {
+        qpaperUpload.click();
+    });
+
+    qpaperUpload.addEventListener('change', async () => {
+        if (!qpaperUpload.files || qpaperUpload.files.length === 0) return;
+
+        const file = qpaperUpload.files[0];
+        const formData = new FormData();
+        formData.append('file', file);
+
+        appendMessage('assistant', `Processing Question Paper: ${file.name}... This might take a minute as I search the notes for every question.`);
+        const typingId = showTypingIndicator();
+
+        try {
+            const response = await fetch('/generate_key', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+            removeElement(typingId);
+
+            if (response.ok) {
+                appendMessage('assistant', `✅ Finished generating the answer key! Review it in the pop-up window.`);
+                // Show modal and populate text
+                answerKeyTextarea.value = data.response;
+                reviewModal.classList.remove('hidden');
+            } else {
+                appendMessage('assistant', `❌ Error: ${data.response}`);
+            }
+        } catch (error) {
+            console.error('Error generating key:', error);
+            removeElement(typingId);
+            appendMessage('assistant', '❌ Sorry, there was an error communicating with the server.');
+        }
+
+        qpaperUpload.value = '';
+    });
+
+    closeModalBtn.addEventListener('click', () => {
+        reviewModal.classList.add('hidden');
+    });
+
+    downloadPdfBtn.addEventListener('click', async () => {
+        const content = answerKeyTextarea.value;
+        downloadPdfBtn.disabled = true;
+        downloadPdfBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generating...';
+
+        try {
+            const response = await fetch('/download_pdf', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ content: content })
+            });
+
+            if (response.ok) {
+                // Get the blob from the response
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = 'Answer_Key.pdf';
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                a.remove();
+                reviewModal.classList.add('hidden');
+            } else {
+                const data = await response.json();
+                alert('Error creating PDF: ' + data.response);
+            }
+        } catch (error) {
+            console.error('Error downloading PDF:', error);
+            alert('Failed to download PDF.');
+        } finally {
+            downloadPdfBtn.disabled = false;
+            downloadPdfBtn.innerHTML = '<i class="fa-solid fa-download"></i> Download PDF';
+        }
     });
 
     function appendMessage(role, content) {

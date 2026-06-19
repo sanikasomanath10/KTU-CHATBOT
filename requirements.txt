@@ -8,3 +8,4 @@ google-generativeai
 pypdf
 torch
 torchvision
+fpdf
