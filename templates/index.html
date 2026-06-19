@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KTU Assistant | Industrial Safety Engineering</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <i class="fa-solid fa-graduation-cap"></i>
+                    <h2>KTU Assistant</h2>
+                </div>
+                <p class="subtitle"> Notes Chatbot</p>
+            </div>
+            <div class="sidebar-actions">
+                <button id="clear-btn" class="action-btn">
+                    <i class="fa-solid fa-trash-can"></i> Clear Chat
+                </button>
+                <input type="file" id="pdf-upload" accept=".pdf" multiple style="display: none;">
+                <button id="upload-btn" class="action-btn" style="margin-top: 10px;">
+                    <i class="fa-solid fa-file-arrow-up"></i> Upload Textbooks
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Chat Area -->
+        <main class="chat-area">
+            <header class="chat-header">
+                <h1>Ask questions from your PDF notes</h1>
+            </header>
+            
+            <div class="chat-messages" id="chat-messages">
+                <!-- Initial welcome message -->
+                <div class="message assistant">
+                    <div class="avatar"><i class="fa-solid fa-robot"></i></div>
+                    <div class="content">Hello! I am the KTU Assistant. Ask me a question about your notes!</div>
+                </div>
+            </div>
+
+            <div class="chat-input-container">
+                <form id="chat-form" class="chat-form">
+                    <input type="text" id="user-input" placeholder="Ask a question..." autocomplete="off" required>
+                    <button type="submit" id="send-btn" class="send-btn">
+                        <i class="fa-solid fa-paper-plane"></i>
+                    </button>
+                </form>
+            </div>
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
