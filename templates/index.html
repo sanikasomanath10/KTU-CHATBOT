@@ -38,6 +38,19 @@
                         <span>Generate Answer Key</span>
                     </button>
                 </div>
+                <div class="evaluate-container" style="margin-top: 20px; padding-top: 15px; border-top: 1px solid rgba(255, 255, 255, 0.1);">
+                    <h3 style="font-size: 0.85rem; margin-bottom: 10px; color: #cbd5e1; font-weight: 500;">Evaluate Sheet</h3>
+                    <select id="strictness-select" class="strictness-select" style="width: 100%; padding: 8px 12px; margin-bottom: 10px; border-radius: 8px; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.1); color: white; cursor: pointer; font-family: inherit; font-size: 0.9rem;">
+                        <option value="Medium" style="color: #333;">Medium (Standard)</option>
+                        <option value="Liberal" style="color: #333;">Liberal (Lenient)</option>
+                        <option value="Hard" style="color: #333;">Hard (Strict)</option>
+                    </select>
+                    <input type="file" id="answersheet-upload" accept=".pdf" hidden>
+                    <button id="evaluate-btn" class="action-btn secondary-btn" style="background: rgba(255, 255, 255, 0.1);">
+                        <i class="fa-solid fa-check-double"></i>
+                        <span>Upload Answer Sheet</span>
+                    </button>
+                </div>
             </div>
         </aside>
 
@@ -79,6 +92,23 @@
             </div>
             <div class="modal-footer">
                 <button id="download-pdf-btn" class="primary-btn"><i class="fa-solid fa-download"></i> Download PDF</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Evaluation Modal -->
+    <div id="evaluation-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Evaluation Report</h2>
+                <button id="close-eval-modal-btn" class="close-btn"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <p>Review the generated evaluation and feedback before downloading.</p>
+                <textarea id="evaluation-textarea"></textarea>
+            </div>
+            <div class="modal-footer">
+                <button id="download-eval-pdf-btn" class="primary-btn"><i class="fa-solid fa-download"></i> Download PDF</button>
             </div>
         </div>
     </div>

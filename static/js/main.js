@@ -200,6 +200,107 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Evaluate Answer Sheet Logic
+    const evaluateBtn = document.getElementById('evaluate-btn');
+    const answersheetUpload = document.getElementById('answersheet-upload');
+    const strictnessSelect = document.getElementById('strictness-select');
+    const evaluationModal = document.getElementById('evaluation-modal');
+    const closeEvalModalBtn = document.getElementById('close-eval-modal-btn');
+    const downloadEvalPdfBtn = document.getElementById('download-eval-pdf-btn');
+    const evaluationTextarea = document.getElementById('evaluation-textarea');
+
+    evaluateBtn.addEventListener('click', () => {
+        const currentAnswerKey = answerKeyTextarea.value.trim();
+        if (!currentAnswerKey) {
+            alert("Please generate or provide an Answer Key first before evaluating.");
+            return;
+        }
+        answersheetUpload.click();
+    });
+
+    answersheetUpload.addEventListener('change', async () => {
+        if (!answersheetUpload.files || answersheetUpload.files.length === 0) return;
+
+        const file = answersheetUpload.files[0];
+        const strictness = strictnessSelect.value;
+        const answerKey = answerKeyTextarea.value;
+        
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('answer_key', answerKey);
+        formData.append('strictness', strictness);
+
+        appendMessage('assistant', `Evaluating Answer Sheet: ${file.name} with ${strictness} strictness... This will take a moment.`);
+        const typingId = showTypingIndicator();
+
+        try {
+            const response = await fetch('/evaluate_sheet', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+            removeElement(typingId);
+
+            if (response.ok) {
+                appendMessage('assistant', `✅ Finished evaluating the answer sheet! Review the report in the pop-up window.`);
+                evaluationTextarea.value = data.response;
+                evaluationModal.classList.remove('hidden');
+            } else {
+                appendMessage('assistant', `❌ Error: ${data.response}`);
+            }
+        } catch (error) {
+            console.error('Error evaluating sheet:', error);
+            removeElement(typingId);
+            appendMessage('assistant', '❌ Sorry, there was an error communicating with the server.');
+        }
+
+        answersheetUpload.value = '';
+    });
+
+    closeEvalModalBtn.addEventListener('click', () => {
+        evaluationModal.classList.add('hidden');
+    });
+
+    downloadEvalPdfBtn.addEventListener('click', async () => {
+        const content = evaluationTextarea.value;
+        downloadEvalPdfBtn.disabled = true;
+        downloadEvalPdfBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generating...';
+
+        try {
+            const response = await fetch('/download_pdf', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ content: content })
+            });
+
+            if (response.ok) {
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = 'Evaluation_Report.pdf';
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                a.remove();
+                evaluationModal.classList.add('hidden');
+            } else {
+                const data = await response.json();
+                alert('Error creating PDF: ' + data.response);
+            }
+        } catch (error) {
+            console.error('Error downloading PDF:', error);
+            alert('Failed to download PDF.');
+        } finally {
+            downloadEvalPdfBtn.disabled = false;
+            downloadEvalPdfBtn.innerHTML = '<i class="fa-solid fa-download"></i> Download PDF';
+        }
+    });
+
     function appendMessage(role, content) {
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${role}`;

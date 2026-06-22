@@ -4,7 +4,7 @@ import re
 from fpdf import FPDF
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceEmbeddings
-import google.generativeai as genai
+import requests
 import os
 from dotenv import load_dotenv
 from pypdf import PdfReader
@@ -15,9 +15,20 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# Configure Gemini
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.GenerativeModel("gemini-2.5-flash")
+def generate_with_ollama(prompt, model_name="llama3.1"):
+    try:
+        url = "http://localhost:11434/api/generate"
+        data = {
+            "model": model_name,
+            "prompt": prompt,
+            "stream": False
+        }
+        response = requests.post(url, json=data)
+        response.raise_for_status()
+        return response.json().get("response", "")
+    except requests.exceptions.RequestException as e:
+        print(f"Ollama API error: {e}")
+        raise Exception(f"Failed to communicate with Ollama: {e}")
 
 def load_vector_db():
     print("Loading vector database...")
@@ -128,8 +139,8 @@ RULES:
 
 ANSWER:
 """
-        response = model.generate_content(prompt)
-        return jsonify({"response": response.text})
+        response_text = generate_with_ollama(prompt)
+        return jsonify({"response": response_text})
     except Exception as e:
         return jsonify({"response": f"Error generating response: {e}"}), 500
 
@@ -156,18 +167,20 @@ def generate_key():
         # Use LLM to extract questions from the text
         extraction_prompt = f"""
 You are an assistant that extracts questions from a test paper.
-Extract all the distinct questions from the following text. 
-If a question has sub-parts (like a, b, c), keep them together as a single question.
-Do not include general instructions like "Answer all questions", section headers, or marks.
-Return each distinct question separated by "|||".
+Extract all the distinct questions from the following text ALONG WITH THEIR MARKS. 
+Carefully read the document to understand the marks allocation. Marks may be explicitly stated next to each question, or they may be defined in section headers (e.g., "Section A: Answer all questions. Each carries 3 marks").
+Determine the marks for EVERY question based on these instructions.
+If a question has sub-parts (like a, b, c), keep them together as a single question but specify the marks for each part if available.
+Do not include general instructions like "Answer all questions" or section headers in your final output, but USE them to determine the marks.
+Format each extracted question exactly like this: [Marks] Question text. (For example: [5 Marks] What is ...?)
+Return each distinct formatted question separated by "|||".
 If there are no questions, return "NO_QUESTIONS_FOUND".
 
 TEXT:
 {text}
 """
         try:
-            extraction_response = model.generate_content(extraction_prompt)
-            extracted_text = extraction_response.text.strip()
+            extracted_text = generate_with_ollama(extraction_prompt).strip()
             
             if "NO_QUESTIONS_FOUND" in extracted_text or not extracted_text:
                 return jsonify({"response": "Could not automatically detect questions. Please ensure the file contains clear questions."}), 400
@@ -201,6 +214,12 @@ You are an expert academic assistant.
 Use ONLY the provided notes to answer the specific questions from a test paper.
 If the notes do not contain the answer for a particular question, say "Information not found in the textbook."
 
+Pay close attention to the MARKS allocated for each question (e.g., [5 Marks]).
+- For 1-2 marks questions, provide a brief, concise answer (1-2 sentences).
+- For 3-5 marks questions, provide a detailed paragraph or a few bullet points.
+- For 6+ marks questions, provide a comprehensive answer with headings, subheadings, and a clear structure.
+Include a brief suggested marking rubric or marks allocation for each answer.
+
 NOTES:
 {combined_contexts}
 
@@ -208,16 +227,20 @@ QUESTIONS TO ANSWER:
 {questions_text}
 
 Please provide the answers for all questions. Format your output exactly like this for each question:
-**Q[Number]: [Question text]**
+**Q[Number]: [Question text including marks]**
 
-[Your answer]
+[Your answer matching the depth required by the marks]
+
+*Suggested Rubric:*
+- [Rubric point 1]: [Marks]
+- [Rubric point 2]: [Marks]
 
 ---
 
 """
         try:
-            response = model.generate_content(prompt)
-            final_answer_key += response.text.strip()
+            response_text = generate_with_ollama(prompt)
+            final_answer_key += response_text.strip()
         except Exception as e:
             return jsonify({"response": f"Error generating answers: {str(e)}"}), 500
 
@@ -225,6 +248,63 @@ Please provide the answers for all questions. Format your output exactly like th
 
     except Exception as e:
         return jsonify({"response": f"Error generating answer key: {str(e)}"}), 500
+
+@app.route("/evaluate_sheet", methods=["POST"])
+def evaluate_sheet():
+    if 'file' not in request.files:
+        return jsonify({"response": "No file part"}), 400
+        
+    file = request.files['file']
+    if not file or file.filename == '':
+        return jsonify({"response": "No selected file"}), 400
+
+    answer_key = request.form.get("answer_key")
+    strictness = request.form.get("strictness", "Medium")
+
+    if not answer_key:
+        return jsonify({"response": "No answer key provided. Please generate an answer key first."}), 400
+
+    try:
+        reader = PdfReader(file)
+        student_text = ""
+        for page in reader.pages:
+            t = page.extract_text()
+            if t: student_text += t
+
+        prompt = f"""
+You are an expert academic evaluator. 
+You are tasked with evaluating a student's answer sheet based on a provided answer key and grading rubric.
+
+ANSWER KEY & RUBRIC:
+{answer_key}
+
+STUDENT'S ANSWER SHEET:
+{student_text}
+
+EVALUATION STRICTNESS LEVEL: {strictness}
+- If strictness is "Hard": Be very strict. Require exact terminology and all points from the rubric to award full marks. Deduct marks for missing details.
+- If strictness is "Medium": Standard grading. Balance terminology and conceptual understanding. Award partial marks reasonably.
+- If strictness is "Liberal": Give the benefit of the doubt. Award partial marks if the core concept or related keywords are present, even if poorly phrased.
+
+GRADING RULE:
+For each question, check its total marks (if given in the answer key).
+- A 3 mark question requires a minimum of 3 matching points to award full marks, and so on.
+- Adjust the awarded marks according to the strictness level.
+
+OUTPUT FORMAT:
+Generate a markdown formatted evaluation report.
+For each evaluated question, provide:
+**Q[Number]**: 
+- **Marks Awarded**: [X] / [Total Marks]
+- **Feedback**: [Detailed feedback explaining why marks were awarded or deducted based on the rubric and strictness level.]
+
+At the end, provide a **Total Score** and a brief overall comment.
+"""
+        response_text = generate_with_ollama(prompt)
+        return jsonify({"response": response_text}), 200
+
+    except Exception as e:
+        return jsonify({"response": f"Error evaluating sheet: {str(e)}"}), 500
 
 @app.route("/download_pdf", methods=["POST"])
 def download_pdf():
@@ -257,4 +337,4 @@ def download_pdf():
         return jsonify({"response": f"Error creating PDF: {str(e)}"}), 500
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=False, use_reloader=False)

@@ -4,7 +4,7 @@ langchain
 langchain-community
 faiss-cpu
 sentence-transformers
-google-generativeai
+requests
 pypdf
 torch
 torchvision
