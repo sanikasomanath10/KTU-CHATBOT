@@ -1,16 +1,21 @@
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceEmbeddings
-import google.generativeai as genai
-import os
-# ==========================
-# GEMINI API KEY
-# ==========================
-genai.configure(
-    api_key=os.getenv("GEMINI_API_KEY")
-)
+from transformers import pipeline
+import torch
 
-# Gemini Model
-model = genai.GenerativeModel("gemini-2.5-flash")
+print("Loading Hugging Face model (Qwen2.5-1.5B-Instruct)...")
+try:
+    device_id = 0 if torch.cuda.is_available() else -1
+    hf_pipeline = pipeline(
+        "text-generation",
+        model="Qwen/Qwen2.5-1.5B-Instruct",
+        device=device_id,
+        torch_dtype=torch.float32 if device_id == -1 else torch.bfloat16
+    )
+    print("Hugging Face model loaded successfully.")
+except Exception as e:
+    print(f"Error loading Hugging Face model: {e}")
+    hf_pipeline = None
 
 # ==========================
 # LOAD EMBEDDING MODEL
@@ -74,11 +79,15 @@ ANSWER:
 """
 
     try:
-
-        response = model.generate_content(prompt)
+        messages = [
+            {"role": "system", "content": "You are a helpful academic assistant."},
+            {"role": "user", "content": prompt}
+        ]
+        response = hf_pipeline(messages, max_new_tokens=1024)
+        response_text = response[0]["generated_text"][-1]["content"].strip()
 
         print("\nBot:")
-        print(response.text)
+        print(response_text)
         print()
 
     except Exception as e:

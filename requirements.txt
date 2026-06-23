@@ -9,3 +9,5 @@ pypdf
 torch
 torchvision
 fpdf
+transformers
+accelerate

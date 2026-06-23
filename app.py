@@ -9,26 +9,41 @@ import os
 from dotenv import load_dotenv
 from pypdf import PdfReader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from transformers import pipeline
+import torch
 
 # Load environment variables from .env file
 load_dotenv()
 
 app = Flask(__name__)
 
-def generate_with_ollama(prompt, model_name="llama3.1"):
+print("Loading Hugging Face model (Qwen2.5-1.5B-Instruct)...")
+try:
+    device_id = 0 if torch.cuda.is_available() else -1
+    hf_pipeline = pipeline(
+        "text-generation",
+        model="Qwen/Qwen2.5-1.5B-Instruct",
+        device=device_id,
+        torch_dtype=torch.float32 if device_id == -1 else torch.bfloat16
+    )
+    print("Hugging Face model loaded successfully.")
+except Exception as e:
+    print(f"Error loading Hugging Face model: {e}")
+    hf_pipeline = None
+
+def generate_with_local_model(prompt):
+    if not hf_pipeline:
+        raise Exception("Model is not loaded.")
     try:
-        url = "http://localhost:11434/api/generate"
-        data = {
-            "model": model_name,
-            "prompt": prompt,
-            "stream": False
-        }
-        response = requests.post(url, json=data)
-        response.raise_for_status()
-        return response.json().get("response", "")
-    except requests.exceptions.RequestException as e:
-        print(f"Ollama API error: {e}")
-        raise Exception(f"Failed to communicate with Ollama: {e}")
+        messages = [
+            {"role": "system", "content": "You are a helpful academic assistant."},
+            {"role": "user", "content": prompt}
+        ]
+        response = hf_pipeline(messages, max_new_tokens=1024)
+        return response[0]["generated_text"][-1]["content"].strip()
+    except Exception as e:
+        print(f"Model generation error: {e}")
+        raise Exception(f"Failed to generate text: {e}")
 
 def load_vector_db():
     print("Loading vector database...")
@@ -139,7 +154,7 @@ RULES:
 
 ANSWER:
 """
-        response_text = generate_with_ollama(prompt)
+        response_text = generate_with_local_model(prompt)
         return jsonify({"response": response_text})
     except Exception as e:
         return jsonify({"response": f"Error generating response: {e}"}), 500
@@ -169,6 +184,13 @@ def generate_key():
 You are an assistant that extracts questions from a test paper.
 Extract all the distinct questions from the following text ALONG WITH THEIR MARKS. 
 Carefully read the document to understand the marks allocation. Marks may be explicitly stated next to each question, or they may be defined in section headers (e.g., "Section A: Answer all questions. Each carries 3 marks").
+
+IMPORTANT CONTEXT ON EXAM STRUCTURE:
+The standard format of this question paper is typically out of 170 marks total:
+- The first 10 questions are 3 marks each.
+- The next 10 questions are 14 marks each (which may be split into subquestions).
+This is the standard format but it may vary. Use this context to help infer marks if they are missing or unclear, but always prefer explicitly stated marks or section instructions if present.
+
 Determine the marks for EVERY question based on these instructions.
 If a question has sub-parts (like a, b, c), keep them together as a single question but specify the marks for each part if available.
 Do not include general instructions like "Answer all questions" or section headers in your final output, but USE them to determine the marks.
@@ -180,7 +202,7 @@ TEXT:
 {text}
 """
         try:
-            extracted_text = generate_with_ollama(extraction_prompt).strip()
+            extracted_text = generate_with_local_model(extraction_prompt).strip()
             
             if "NO_QUESTIONS_FOUND" in extracted_text or not extracted_text:
                 return jsonify({"response": "Could not automatically detect questions. Please ensure the file contains clear questions."}), 400
@@ -239,7 +261,7 @@ Please provide the answers for all questions. Format your output exactly like th
 
 """
         try:
-            response_text = generate_with_ollama(prompt)
+            response_text = generate_with_local_model(prompt)
             final_answer_key += response_text.strip()
         except Exception as e:
             return jsonify({"response": f"Error generating answers: {str(e)}"}), 500
@@ -300,7 +322,7 @@ For each evaluated question, provide:
 
 At the end, provide a **Total Score** and a brief overall comment.
 """
-        response_text = generate_with_ollama(prompt)
+        response_text = generate_with_local_model(prompt)
         return jsonify({"response": response_text}), 200
 
     except Exception as e:
