@@ -9,38 +9,32 @@ import os
 from dotenv import load_dotenv
 from pypdf import PdfReader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from transformers import pipeline
-import torch
+from google import genai
+import concurrent.futures
 
 # Load environment variables from .env file
 load_dotenv()
 
 app = Flask(__name__)
 
-print("Loading Hugging Face model (Qwen2.5-1.5B-Instruct)...")
+print("Initializing Gemini Client...")
 try:
-    device_id = 0 if torch.cuda.is_available() else -1
-    hf_pipeline = pipeline(
-        "text-generation",
-        model="Qwen/Qwen2.5-1.5B-Instruct",
-        device=device_id,
-        torch_dtype=torch.float32 if device_id == -1 else torch.bfloat16
-    )
-    print("Hugging Face model loaded successfully.")
+    client = genai.Client()
+    print("Gemini client initialized successfully.")
 except Exception as e:
-    print(f"Error loading Hugging Face model: {e}")
-    hf_pipeline = None
+    print(f"Error initializing Gemini client: {e}")
+    client = None
 
-def generate_with_local_model(prompt):
-    if not hf_pipeline:
-        raise Exception("Model is not loaded.")
+def generate_with_local_model(prompt, model_name="gemini-2.5-pro", temperature=0.1):
+    if not client:
+        raise Exception("Gemini client is not initialized.")
     try:
-        messages = [
-            {"role": "system", "content": "You are a helpful academic assistant."},
-            {"role": "user", "content": prompt}
-        ]
-        response = hf_pipeline(messages, max_new_tokens=1024)
-        return response[0]["generated_text"][-1]["content"].strip()
+        response = client.models.generate_content(
+            model=model_name,
+            contents=f"System: You are a strict and precise academic evaluator.\nUser: {prompt}",
+            config={"temperature": temperature}
+        )
+        return response.text.strip()
     except Exception as e:
         print(f"Model generation error: {e}")
         raise Exception(f"Failed to generate text: {e}")
@@ -215,23 +209,22 @@ TEXT:
         except Exception as e:
             return jsonify({"response": f"Error extracting questions from file: {str(e)}"}), 500
 
-        # Limit to first 20 questions to prevent extreme generation times
-        questions = questions[:20]
+        # Remove the previous 20 question limit to process all questions
+        chunk_size = 10
+        chunks = [questions[i:i + chunk_size] for i in range(0, len(questions), chunk_size)]
         
         final_answer_key = "## Generated Answer Key\n\n"
-        
-        # Gather contexts for all questions to answer them in a single batch
-        # This prevents hitting the 5 RPM free tier rate limit
-        combined_contexts = ""
-        questions_text = ""
-        
-        for i, q in enumerate(questions, 1):
-            docs = vector_store.similarity_search(q, k=3)
-            context = "\n".join(doc.page_content for doc in docs)
-            combined_contexts += f"--- CONTEXT FOR Q{i} ---\n{context}\n\n"
-            questions_text += f"Q{i}: {q}\n"
-            
-        prompt = f"""
+
+        def process_chunk(chunk_questions, start_index):
+            combined_contexts = ""
+            questions_text = ""
+            for i, q in enumerate(chunk_questions, start_index):
+                docs = vector_store.similarity_search(q, k=3)
+                context = "\n".join(doc.page_content for doc in docs)
+                combined_contexts += f"--- CONTEXT FOR Q{i} ---\n{context}\n\n"
+                questions_text += f"Q{i}: {q}\n"
+
+            prompt = f"""
 You are an expert academic assistant.
 Use ONLY the provided notes to answer the specific questions from a test paper.
 If the notes do not contain the answer for a particular question, say "Information not found in the textbook."
@@ -257,14 +250,27 @@ Please provide the answers for all questions. Format your output exactly like th
 - [Rubric point 1]: [Marks]
 - [Rubric point 2]: [Marks]
 
+**Total Marks for this Question**: [Total Marks]
 ---
 
 """
-        try:
-            response_text = generate_with_local_model(prompt)
-            final_answer_key += response_text.strip()
-        except Exception as e:
-            return jsonify({"response": f"Error generating answers: {str(e)}"}), 500
+            return generate_with_local_model(prompt)
+
+        results = [""] * len(chunks)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            future_to_index = {
+                executor.submit(process_chunk, chunks[i], i * chunk_size + 1): i
+                for i in range(len(chunks))
+            }
+            for future in concurrent.futures.as_completed(future_to_index):
+                idx = future_to_index[future]
+                try:
+                    results[idx] = future.result()
+                except Exception as e:
+                    results[idx] = f"Error generating answers for some questions: {e}\n\n"
+        
+        for res in results:
+            final_answer_key += res.strip() + "\n\n"
 
         return jsonify({"response": final_answer_key}), 200
 
@@ -293,14 +299,26 @@ def evaluate_sheet():
             t = page.extract_text()
             if t: student_text += t
 
-        prompt = f"""
+        # Split answer key by "**Q" to isolate questions
+        parts = answer_key.split("**Q")
+        if len(parts) > 1:
+            questions_rubrics = ["**Q" + p for p in parts[1:]]
+        else:
+            questions_rubrics = [answer_key]
+            
+        chunk_size = 2 # Reduced to 2 to prevent the AI from skipping questions
+        chunks = [questions_rubrics[i:i + chunk_size] for i in range(0, len(questions_rubrics), chunk_size)]
+        
+        def evaluate_chunk(chunk):
+            chunk_text = "\n".join(chunk)
+            prompt = f"""
 You are an expert academic evaluator. 
-You are tasked with evaluating a student's answer sheet based on a provided answer key and grading rubric.
+You are tasked with evaluating a student's answer sheet ONLY for the specific questions provided in the chunk below.
 
-ANSWER KEY & RUBRIC:
-{answer_key}
+QUESTIONS & RUBRICS TO EVALUATE:
+{chunk_text}
 
-STUDENT'S ANSWER SHEET:
+STUDENT'S ENTIRE ANSWER SHEET:
 {student_text}
 
 EVALUATION STRICTNESS LEVEL: {strictness}
@@ -309,21 +327,74 @@ EVALUATION STRICTNESS LEVEL: {strictness}
 - If strictness is "Liberal": Give the benefit of the doubt. Award partial marks if the core concept or related keywords are present, even if poorly phrased.
 
 GRADING RULE:
-For each question, check its total marks (if given in the answer key).
-- A 3 mark question requires a minimum of 3 matching points to award full marks, and so on.
-- Adjust the awarded marks according to the strictness level.
+1. You MUST evaluate EVERY SINGLE question provided in the QUESTIONS & RUBRICS section above. Do not skip any question.
+2. If the student did not answer a question, award 0 marks and state "Not answered".
+3. CRITICAL: You MUST strictly adhere to the total marks specified in the ANSWER KEY. Do NOT invent or change the total marks.
+4. The marks awarded CANNOT exceed the total marks allocated for that question.
 
 OUTPUT FORMAT:
 Generate a markdown formatted evaluation report.
-For each evaluated question, provide:
+For EACH question, you MUST output EXACTLY this format (do not deviate):
 **Q[Number]**: 
 - **Marks Awarded**: [X] / [Total Marks]
-- **Feedback**: [Detailed feedback explaining why marks were awarded or deducted based on the rubric and strictness level.]
+- **Feedback**: [Detailed feedback explaining why marks were awarded or deducted.]
 
-At the end, provide a **Total Score** and a brief overall comment.
+DO NOT provide a Total Score at the end. Only evaluate the questions provided in this specific chunk.
 """
-        response_text = generate_with_local_model(prompt)
-        return jsonify({"response": response_text}), 200
+            import time
+            for attempt in range(3):
+                try:
+                    return generate_with_local_model(prompt)
+                except Exception as e:
+                    if attempt == 2:
+                        return f"**Q[Unknown]**:\n- **Marks Awarded**: 0 / 0\n- **Feedback**: Error evaluating this chunk: {str(e)}\n\n"
+                    time.sleep(2)
+
+        results = [""] * len(chunks)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            future_to_index = {
+                executor.submit(evaluate_chunk, chunks[i]): i
+                for i in range(len(chunks))
+            }
+            for future in concurrent.futures.as_completed(future_to_index):
+                idx = future_to_index[future]
+                try:
+                    results[idx] = future.result()
+                except Exception as e:
+                    results[idx] = f"Error evaluating some questions: {e}\n\n"
+                    
+        full_evaluation_report = "## Evaluation Report\n\n"
+        for res in results:
+            full_evaluation_report += res.strip() + "\n\n"
+            
+        # Programmatically calculate total score
+        total_awarded = 0.0
+        total_possible = 0.0
+        
+        # More robust regex to catch variations like "2 / 5", "2/5", "2 out of 5", "[2] / [5]", "**2** / **5**"
+        matches = re.findall(r"\*\*Marks Awarded\*\*\s*:\s*\*?\[?([\d\.]+)\]?\*?\s*(?:/|out of)\s*\*?\[?([\d\.]+)\]?\*?", full_evaluation_report, re.IGNORECASE)
+        
+        for awarded, possible in matches:
+            try:
+                total_awarded += float(awarded)
+                total_possible += float(possible)
+            except ValueError:
+                pass
+                
+        if total_possible == 0:
+            full_evaluation_report += "\n\n### Final Total Score\n*(Could not automatically calculate score, please check the formatting above)*\n"
+        else:
+            total_awarded = round(total_awarded, 2)
+            total_possible = round(total_possible, 2)
+            percentage = round((total_awarded / total_possible) * 100, 2) if total_possible > 0 else 0
+            
+            full_evaluation_report += f"\n\n### Final Evaluation Score\n"
+            full_evaluation_report += f"- **Total Marks Awarded**: {total_awarded}\n"
+            full_evaluation_report += f"- **Full Marks Possible**: {total_possible}\n"
+            full_evaluation_report += f"\n**Final Score**: {total_awarded} out of {total_possible} ({percentage}%)\n\n"
+            full_evaluation_report += f"*Overall Comment*: Evaluation complete. Evaluated {len(matches)} questions."
+
+        return jsonify({"response": full_evaluation_report}), 200
 
     except Exception as e:
         return jsonify({"response": f"Error evaluating sheet: {str(e)}"}), 500

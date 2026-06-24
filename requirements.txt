@@ -11,3 +11,4 @@ torchvision
 fpdf
 transformers
 accelerate
+google-genai

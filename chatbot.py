@@ -1,21 +1,18 @@
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from transformers import pipeline
-import torch
+import os
+from google import genai
+from dotenv import load_dotenv
 
-print("Loading Hugging Face model (Qwen2.5-1.5B-Instruct)...")
+load_dotenv()
+
+print("Initializing Gemini Client...")
 try:
-    device_id = 0 if torch.cuda.is_available() else -1
-    hf_pipeline = pipeline(
-        "text-generation",
-        model="Qwen/Qwen2.5-1.5B-Instruct",
-        device=device_id,
-        torch_dtype=torch.float32 if device_id == -1 else torch.bfloat16
-    )
-    print("Hugging Face model loaded successfully.")
+    client = genai.Client()
+    print("Gemini client initialized successfully.")
 except Exception as e:
-    print(f"Error loading Hugging Face model: {e}")
-    hf_pipeline = None
+    print(f"Error initializing Gemini client: {e}")
+    client = None
 
 # ==========================
 # LOAD EMBEDDING MODEL
@@ -79,12 +76,13 @@ ANSWER:
 """
 
     try:
-        messages = [
-            {"role": "system", "content": "You are a helpful academic assistant."},
-            {"role": "user", "content": prompt}
-        ]
-        response = hf_pipeline(messages, max_new_tokens=1024)
-        response_text = response[0]["generated_text"][-1]["content"].strip()
+        if not client:
+            raise Exception("Gemini client is not initialized.")
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=f"System: You are a helpful academic assistant.\nUser: {prompt}"
+        )
+        response_text = response.text.strip()
 
         print("\nBot:")
         print(response_text)
