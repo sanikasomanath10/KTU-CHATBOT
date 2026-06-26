@@ -30,16 +30,22 @@ except Exception as e:
 def generate_with_local_model(prompt, model_name="gemini-2.5-flash", temperature=0.1):
     if not client:
         raise Exception("Gemini client is not initialized.")
-    try:
-        response = client.models.generate_content(
-            model=model_name,
-            contents=f"System: You are a strict and precise academic evaluator.\nUser: {prompt}",
-            config={"temperature": temperature}
-        )
-        return response.text.strip()
-    except Exception as e:
-        print(f"Model generation error: {e}")
-        raise Exception(f"Failed to generate text: {e}")
+    import time
+    last_error = None
+    for attempt in range(3):
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=f"System: You are a strict and precise academic evaluator.\nUser: {prompt}",
+                config={"temperature": temperature}
+            )
+            return response.text.strip()
+        except Exception as e:
+            last_error = e
+            print(f"Model generation error (attempt {attempt + 1}/3): {e}")
+            if attempt < 2:
+                time.sleep(2.0)
+    raise Exception(f"Failed to generate text: {last_error}")
 
 def load_vector_db():
     print("Loading vector database...")
@@ -106,6 +112,20 @@ def upload_files():
         
         # Optionally save to disk to persist
         vector_store.save_local("vector_db")
+        
+        # Save upload status metadata
+        import json
+        try:
+            status_data = {
+                "has_index": True,
+                "file_count": len(files),
+                "filenames": [f.filename for f in files]
+            }
+            os.makedirs("vector_db", exist_ok=True)
+            with open("vector_db/status.json", "w") as sf:
+                json.dump(status_data, sf)
+        except Exception as se:
+            print(f"Error saving status metadata: {se}")
         
         return jsonify({"response": f"Successfully processed {len(files)} files and built knowledge base."}), 200
         
@@ -440,6 +460,29 @@ def download_pdf():
         )
     except Exception as e:
         return jsonify({"response": f"Error creating PDF: {str(e)}"}), 500
+
+@app.route("/status", methods=["GET"])
+def get_status():
+    import json
+    status_file = "vector_db/status.json"
+    if os.path.exists("vector_db/index.faiss") and os.path.exists(status_file):
+        try:
+            with open(status_file, "r") as sf:
+                status_data = json.load(sf)
+                return jsonify(status_data), 200
+        except Exception as e:
+            pass
+    if os.path.exists("vector_db/index.faiss"):
+        return jsonify({
+            "has_index": True,
+            "file_count": 1,
+            "filenames": []
+        }), 200
+    return jsonify({
+        "has_index": False,
+        "file_count": 0,
+        "filenames": []
+    }), 200
 
 if __name__ == "__main__":
     app.run(debug=False, use_reloader=False)

@@ -42,7 +42,6 @@ KTU-CHATBOT/
 │
 ├── app.py                  # Main Flask application server & endpoints
 ├── chatbot.py              # CLI version of the RAG chatbot
-├── build_vector_db.py      # Script to manually build vector database from local data
 ├── requirements.txt        # Project package dependencies
 ├── README.md               # Project documentation
 ├── .env                    # Environment variables (Gemini API Key)
@@ -55,9 +54,6 @@ KTU-CHATBOT/
 │   │   └── style.css       # Page styles and UI formatting
 │   └── js/
 │       └── main.js         # Frontend interactive logic (Chat, Uploads, Evaluator)
-│
-├── data/                   # Directory containing textbook PDFs
-│   └── industry_module1.pdf
 │
 └── vector_db/              # Generated FAISS vector index files
 ```
@@ -128,3 +124,8 @@ KTU-CHATBOT/
 ## Authors
 
 * **Alka A.S.** - *B.Tech Computer Science and Engineering, Government Engineering College Sreekrishnapuram*
+* **Danshi A** - *B.Tech Information Technology, Government Engineering College Sreekrishnapuram*
+* **Sanika Somanath** - *B.Tech Information Technology, Government Engineering College Sreekrishnapuram*
+* **Ajisha T.P .** - *B.Tech Computer Science and Engineering, Government Engineering College Sreekrishnapuram*
+* **Sandra Aneesh** - *B.Tech Computer Science and Engineering, Government Engineering College Sreekrishnapuram*
+* **Krishna Priya** - *B.Tech Computer Science and Engineering, Government Engineering College Sreekrishnapuram*

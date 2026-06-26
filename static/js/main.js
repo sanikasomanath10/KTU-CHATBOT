@@ -101,6 +101,9 @@ document.addEventListener('DOMContentLoaded', () => {
             
             if (response.ok) {
                 appendMessage('assistant', `✅ ${data.response}`);
+                if (typeof updateIndexStatus === 'function') {
+                    updateIndexStatus();
+                }
             } else {
                 appendMessage('assistant', `❌ ${data.response}`);
             }
@@ -351,4 +354,97 @@ document.addEventListener('DOMContentLoaded', () => {
     function scrollToBottom() {
         chatMessages.scrollTop = chatMessages.scrollHeight;
     }
+
+    // ============================================
+    // STATE MANAGEMENT HOOKS (KTU CHATBOT REDESIGN)
+    // ============================================
+    const statusBadge = document.getElementById('status-badge');
+    const statusBadgeText = document.getElementById('status-badge-text');
+    const emptyState = document.getElementById('empty-state');
+    const navItems = document.querySelectorAll('.nav-item');
+    const kbWarning = document.getElementById('kb-warning');
+    const kbSuccessHint = document.getElementById('kb-success-hint');
+    
+    // Drag and drop styles for upload zone
+    const uploadZone = document.getElementById('upload-btn');
+    if (uploadZone) {
+        uploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadZone.classList.add('dragover');
+        });
+        uploadZone.addEventListener('dragleave', () => {
+            uploadZone.classList.remove('dragover');
+        });
+        uploadZone.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files && files.length > 0) {
+                pdfUpload.files = files;
+                pdfUpload.dispatchEvent(new Event('change'));
+            }
+        });
+    }
+
+    async function updateIndexStatus() {
+        try {
+            const response = await fetch('/status');
+            const data = await response.json();
+            
+            if (data.has_index) {
+                // Update badge
+                if (statusBadge) statusBadge.className = 'status-badge status-active';
+                if (statusBadgeText) statusBadgeText.textContent = `${data.file_count} PDF${data.file_count > 1 ? 's' : ''} indexed`;
+                
+                // Unlock nav items
+                navItems.forEach(item => {
+                    item.classList.remove('locked');
+                });
+                
+                // Toggle empty state
+                if (emptyState) emptyState.style.display = 'none';
+                if (chatMessages) chatMessages.style.display = 'flex';
+                
+                // Enable input
+                if (userInput) {
+                    userInput.disabled = false;
+                    userInput.placeholder = "Ask a question...";
+                }
+                
+                // Toggle warnings
+                if (kbWarning) kbWarning.style.display = 'none';
+                if (kbSuccessHint) kbSuccessHint.style.display = 'block';
+            } else {
+                // Update badge
+                if (statusBadge) statusBadge.className = 'status-badge status-empty';
+                if (statusBadgeText) statusBadgeText.textContent = 'No PDFs uploaded';
+                
+                // Lock nav items (except chat)
+                navItems.forEach(item => {
+                    if (item.id !== 'nav-chat-btn') {
+                        item.classList.add('locked');
+                    }
+                });
+                
+                // Toggle empty state
+                if (emptyState) emptyState.style.display = 'flex';
+                if (chatMessages) chatMessages.style.display = 'none';
+                
+                // Disable input
+                if (userInput) {
+                    userInput.disabled = true;
+                    userInput.placeholder = "Upload a PDF first to start chatting…";
+                }
+                
+                // Toggle warnings
+                if (kbWarning) kbWarning.style.display = 'block';
+                if (kbSuccessHint) kbSuccessHint.style.display = 'none';
+            }
+        } catch (error) {
+            console.error('Error fetching status:', error);
+        }
+    }
+
+    // Call state update on initial page load
+    updateIndexStatus();
 });

@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KTU CHATBOT | Industrial Safety Engineering</title>
+    <title>KTU Chatbot | Your Study Assistant</title>
+    <!-- Fonts & Icons -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
@@ -12,70 +13,156 @@
     <div class="app-container">
         <!-- Sidebar -->
         <aside class="sidebar">
-            <div class="sidebar-header">
+            <div class="sidebar-brand">
                 <div class="logo">
-                    <i class="fa-solid fa-graduation-cap"></i>
-                    <h2>KTU CHATBOT</h2>
+                    <div class="logo-icon">
+                        <i class="fa-solid fa-graduation-cap"></i>
+                    </div>
+                    <div class="logo-text">
+                        <h2>KTU Chatbot</h2>
+                        <span class="subtitle">Your study assistant</span>
+                    </div>
                 </div>
-                <p class="subtitle">Notes Chatbot</p>
+                
+                <!-- Status Badge -->
+                <div id="status-badge" class="status-badge status-empty">
+                    <i class="fa-solid fa-circle-exclamation"></i>
+                    <span id="status-badge-text">No PDFs uploaded</span>
+                </div>
             </div>
-            <div class="sidebar-actions">
-                <button id="clear-btn" class="action-btn">
-                    <i class="fa-solid fa-trash-can"></i>
-                    <span>Clear Chat</span>
-                </button>
-                <div class="upload-container">
-                    <input type="file" id="pdf-upload" accept=".pdf" multiple hidden>
-                    <button id="upload-btn" class="action-btn primary-btn">
-                        <i class="fa-solid fa-cloud-arrow-up"></i>
-                        <span>Upload Textbooks</span>
-                    </button>
+
+            <!-- Upload Zone -->
+            <div id="upload-btn" class="upload-zone">
+                <i class="fa-solid fa-cloud-arrow-up upload-icon"></i>
+                <div class="upload-zone-text">
+                    <span class="upload-title">Upload your PDFs</span>
+                    <span class="upload-hint">Notes, textbooks, question papers</span>
                 </div>
-                <div class="upload-container" style="margin-top: 10px;">
-                    <input type="file" id="qpaper-upload" accept=".pdf" hidden>
-                    <button id="generate-key-btn" class="action-btn secondary-btn" style="background: rgba(255, 255, 255, 0.1);">
+                <input type="file" id="pdf-upload" accept=".pdf" multiple hidden>
+            </div>
+
+            <!-- Navigation -->
+            <nav class="sidebar-nav">
+                <div class="nav-item active" id="nav-chat-btn">
+                    <div class="nav-item-content">
+                        <i class="fa-solid fa-comments"></i>
+                        <span>Notes chatbot</span>
+                    </div>
+                </div>
+                
+                <div class="nav-item locked" id="generate-key-btn">
+                    <div class="nav-item-content">
                         <i class="fa-solid fa-file-signature"></i>
-                        <span>Generate Answer Key</span>
-                    </button>
+                        <span>Answer key gen</span>
+                    </div>
+                    <i class="fa-solid fa-lock lock-icon"></i>
+                    <input type="file" id="qpaper-upload" accept=".pdf" hidden>
                 </div>
-                <div class="evaluate-container" style="margin-top: 20px; padding-top: 15px; border-top: 1px solid rgba(255, 255, 255, 0.1);">
-                    <h3 style="font-size: 0.85rem; margin-bottom: 10px; color: #cbd5e1; font-weight: 500;">Evaluate Sheet</h3>
-                    <select id="strictness-select" class="strictness-select" style="width: 100%; padding: 8px 12px; margin-bottom: 10px; border-radius: 8px; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.1); color: white; cursor: pointer; font-family: inherit; font-size: 0.9rem;">
-                        <option value="Medium" style="color: #333;">Medium (Standard)</option>
-                        <option value="Liberal" style="color: #333;">Liberal (Lenient)</option>
-                        <option value="Hard" style="color: #333;">Hard (Strict)</option>
-                    </select>
-                    <input type="file" id="answersheet-upload" accept=".pdf" hidden>
-                    <button id="evaluate-btn" class="action-btn secondary-btn" style="background: rgba(255, 255, 255, 0.1);">
+                
+                <div class="nav-item locked" id="evaluate-btn">
+                    <div class="nav-item-content">
                         <i class="fa-solid fa-check-double"></i>
-                        <span>Upload Answer Sheet</span>
-                    </button>
+                        <span>Evaluate sheet</span>
+                    </div>
+                    <i class="fa-solid fa-lock lock-icon"></i>
+                    <input type="file" id="answersheet-upload" accept=".pdf" hidden>
                 </div>
+            </nav>
+
+            <!-- Strictness Controls -->
+            <div class="strictness-container">
+                <span class="strictness-label">Grading Strictness</span>
+                <div class="strictness-toggle">
+                    <button type="button" class="strictness-chip" data-value="Liberal" onclick="setStrictness('Liberal', this)">Lenient</button>
+                    <button type="button" class="strictness-chip active" data-value="Medium" onclick="setStrictness('Medium', this)">Standard</button>
+                    <button type="button" class="strictness-chip" data-value="Hard" onclick="setStrictness('Hard', this)">Strict</button>
+                </div>
+                <select id="strictness-select" class="strictness-select" style="display: none;">
+                    <option value="Liberal">Liberal</option>
+                    <option value="Medium" selected>Medium</option>
+                    <option value="Hard">Hard</option>
+                </select>
             </div>
         </aside>
 
-        <!-- Main Chat Area -->
-        <main class="chat-area">
+        <!-- Main Area -->
+        <main class="main-area">
+            <!-- Sticky Header -->
             <header class="chat-header">
-                <h1>Ask questions from your PDF notes</h1>
+                <div class="header-info">
+                    <h1 id="chat-title">Notes chatbot</h1>
+                    <p id="chat-subtitle">Upload your PDFs to get started</p>
+                </div>
+                <button id="clear-btn" class="header-action-btn" title="Clear Chat">
+                    <i class="fa-solid fa-trash-can"></i>
+                </button>
             </header>
-            
-            <div class="chat-messages" id="chat-messages">
-                <!-- Initial welcome message -->
-                <div class="message assistant">
-                    <div class="avatar"><i class="fa-solid fa-robot"></i></div>
-                    <div class="content">Hello! I am the KTU CHATBOT. Ask me a question about your notes!</div>
+
+            <!-- Main Content Container -->
+            <div class="chat-container-viewport">
+                <!-- Empty State (Shown when no index is active) -->
+                <div id="empty-state" class="empty-state">
+                    <div class="empty-state-icon">
+                        <i class="fa-solid fa-file-pdf"></i>
+                    </div>
+                    <h2>No study materials yet</h2>
+                    <p class="empty-description">Upload your notes or textbooks and I'll answer any questions strictly from those documents.</p>
+                    
+                    <div class="step-cards">
+                        <div class="step-card">
+                            <div class="step-num">1</div>
+                            <h4>Upload your PDFs</h4>
+                            <p>Notes, textbooks, or question papers</p>
+                        </div>
+                        <div class="step-card">
+                            <div class="step-num">2</div>
+                            <h4>Wait for indexing</h4>
+                            <p>Your files are embedded into the knowledge base</p>
+                        </div>
+                        <div class="step-card">
+                            <div class="step-num">3</div>
+                            <h4>Start asking</h4>
+                            <p>Get answers grounded only in your notes</p>
+                        </div>
+                    </div>
+                    
+                    <button class="cta-btn" onclick="document.getElementById('pdf-upload').click()">
+                        <i class="fa-solid fa-cloud-arrow-up"></i>
+                        <span>Upload PDFs to begin</span>
+                    </button>
+                </div>
+
+                <!-- Chat Messages (Hidden when empty) -->
+                <div class="chat-messages" id="chat-messages" style="display: none;">
+                    <!-- Initial welcome message -->
+                    <div class="message assistant">
+                        <div class="avatar"><i class="fa-solid fa-robot"></i></div>
+                        <div class="content">Hello! I am the KTU CHATBOT. Ask me a question about your notes!</div>
+                    </div>
                 </div>
             </div>
 
-            <div class="chat-input-container">
-                <form id="chat-form" class="chat-form">
-                    <input type="text" id="user-input" placeholder="Ask a question..." autocomplete="off" required>
-                    <button type="submit" id="send-btn">
-                        <i class="fa-solid fa-paper-plane"></i>
-                    </button>
-                </form>
-            </div>
+            <!-- Bottom Input Bar -->
+            <footer class="chat-input-footer">
+                <div class="chat-input-wrapper">
+                    <div class="chat-input-container">
+                        <form id="chat-form" class="chat-form">
+                            <input type="text" id="user-input" placeholder="Upload a PDF first to start chatting…" autocomplete="off" required disabled>
+                            <button type="submit" id="send-btn" disabled>
+                                <i class="fa-solid fa-paper-plane"></i>
+                            </button>
+                        </form>
+                    </div>
+                    <div id="input-hint" class="input-hint">
+                        <span id="kb-warning" class="kb-warning">
+                            <i class="fa-solid fa-triangle-exclamation"></i> No knowledge base found — upload PDFs using the sidebar
+                        </span>
+                        <span id="kb-success-hint" class="kb-success-hint" style="display: none;">
+                            Answers are sourced strictly from your uploaded documents.
+                        </span>
+                    </div>
+                </div>
+            </footer>
         </main>
     </div>
 
@@ -113,6 +200,14 @@
         </div>
     </div>
 
+    <!-- Strictness chips helper -->
+    <script>
+        function setStrictness(value, btn) {
+            document.getElementById('strictness-select').value = value;
+            document.querySelectorAll('.strictness-chip').forEach(c => c.classList.remove('active'));
+            btn.classList.add('active');
+        }
+    </script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>
