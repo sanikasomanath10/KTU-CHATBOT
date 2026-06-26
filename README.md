@@ -1,8 +1,8 @@
-# KTU Industrial Safety Chatbot
+# KTU CHATBOT
 
 ## Overview
 
-KTU Industrial Safety Chatbot is an AI-powered question-answering system designed to help students learn Industrial Safety concepts efficiently from their study materials.
+KTU CHATBOT is an AI-powered question-answering system designed to help students learn Industrial Safety concepts efficiently from their study materials.
 
 The chatbot uses Retrieval-Augmented Generation (RAG) to retrieve relevant content from Industrial Safety notes and generate accurate answers using Google's Gemini model.
 
@@ -82,9 +82,9 @@ ktu-industrial-safety-chatbot/
 Clone the repository:
 
 ```bash
-git clone https://github.com/yourusername/ktu-industrial-safety-chatbot.git
+git clone https://github.com/sanikasomanath10/KTU-CHATBOT.git
 
-cd ktu-industrial-safety-chatbot
+cd KTU-CHATBOT
 ```
 
 Create virtual environment:

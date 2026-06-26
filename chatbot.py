@@ -7,6 +7,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 print("Initializing Gemini Client...")
+if not os.environ.get("GEMINI_API_KEY"):
+    print("WARNING: GEMINI_API_KEY environment variable is not set! Please configure it in a .env file.")
 try:
     client = genai.Client()
     print("Gemini client initialized successfully.")
@@ -67,10 +69,9 @@ QUESTION:
 {question}
 
 RULES:
-1. Answer only from the notes.
-2. If related information exists, use it to form the answer.
-3. Keep the answer clear and concise.
-4. Only say "I could not find the answer in the notes" if absolutely nothing relevant is present.
+1. Answer the question strictly based on the provided NOTES. Do not assume, extrapolate, or use outside knowledge.
+2. If the answer is not found in the NOTES, you MUST say exactly "not found in the textbook." and nothing else.
+3. Keep the answer clear, concise, and direct.
 
 ANSWER:
 """

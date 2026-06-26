@@ -18,6 +18,8 @@ load_dotenv()
 app = Flask(__name__)
 
 print("Initializing Gemini Client...")
+if not os.environ.get("GEMINI_API_KEY"):
+    print("WARNING: GEMINI_API_KEY environment variable is not set! Please configure it in a .env file.")
 try:
     client = genai.Client()
     print("Gemini client initialized successfully.")
@@ -25,7 +27,7 @@ except Exception as e:
     print(f"Error initializing Gemini client: {e}")
     client = None
 
-def generate_with_local_model(prompt, model_name="gemini-2.5-pro", temperature=0.1):
+def generate_with_local_model(prompt, model_name="gemini-2.5-flash", temperature=0.1):
     if not client:
         raise Exception("Gemini client is not initialized.")
     try:
@@ -141,10 +143,9 @@ QUESTION:
 {question}
 
 RULES:
-1. Answer only from the notes.
-2. If related information exists, use it to form the answer.
-3. Keep the answer clear and concise.
-4. Only say "I could not find the answer in the notes" if absolutely nothing relevant is present.
+1. Answer the question strictly based on the provided NOTES. Do not assume, extrapolate, or use outside knowledge.
+2. If the answer is not found in the NOTES, you MUST say exactly "not found in the textbook." and nothing else.
+3. Keep the answer clear, concise, and direct.
 
 ANSWER:
 """
@@ -209,25 +210,40 @@ TEXT:
         except Exception as e:
             return jsonify({"response": f"Error extracting questions from file: {str(e)}"}), 500
 
-        # Remove the previous 20 question limit to process all questions
+        # Chunk questions to stay within daily rate limits (e.g. 20 requests per day limit)
         chunk_size = 10
         chunks = [questions[i:i + chunk_size] for i in range(0, len(questions), chunk_size)]
         
         final_answer_key = "## Generated Answer Key\n\n"
 
-        def process_chunk(chunk_questions, start_index):
+        for chunk_idx, chunk in enumerate(chunks):
+            if chunk_idx > 0:
+                import time
+                time.sleep(5.0)  # Stay below RPM rate limit
+                
             combined_contexts = ""
             questions_text = ""
-            for i, q in enumerate(chunk_questions, start_index):
-                docs = vector_store.similarity_search(q, k=3)
+            
+            for i, q in enumerate(chunk, start=chunk_idx * chunk_size + 1):
+                # Clean the question text to remove marks prefix before searching (e.g. "[5 Marks] ...")
+                q_clean = re.sub(r"^\[[^\]]+\]\s*", "", q).strip()
+                docs = vector_store.similarity_search(q_clean, k=4)
                 context = "\n".join(doc.page_content for doc in docs)
-                combined_contexts += f"--- CONTEXT FOR Q{i} ---\n{context}\n\n"
+                combined_contexts += f"=== NOTES CONTEXT FOR Q{i} ===\n{context}\n\n"
                 questions_text += f"Q{i}: {q}\n"
-
+            
             prompt = f"""
 You are an expert academic assistant.
-Use ONLY the provided notes to answer the specific questions from a test paper.
-If the notes do not contain the answer for a particular question, say "Information not found in the textbook."
+Use ONLY the provided notes context to answer the specific questions from a test paper.
+For each question, look strictly at its corresponding NOTES CONTEXT. Do not mix context between questions.
+
+CRITICAL RULES:
+1. You MUST answer every single question listed in the QUESTIONS TO ANSWER section.
+2. If the answer to a particular question is not found in its corresponding NOTES CONTEXT, you MUST write exactly:
+**Q[Number]: [Question text including marks]**
+not found in the textbook.
+---
+Do not include any rubric or marks breakdown or other text for that question.
 
 Pay close attention to the MARKS allocated for each question (e.g., [5 Marks]).
 - For 1-2 marks questions, provide a brief, concise answer (1-2 sentences).
@@ -235,13 +251,13 @@ Pay close attention to the MARKS allocated for each question (e.g., [5 Marks]).
 - For 6+ marks questions, provide a comprehensive answer with headings, subheadings, and a clear structure.
 Include a brief suggested marking rubric or marks allocation for each answer.
 
-NOTES:
+NOTES CONTEXTS:
 {combined_contexts}
 
 QUESTIONS TO ANSWER:
 {questions_text}
 
-Please provide the answers for all questions. Format your output exactly like this for each question:
+Format your output exactly like this for each question:
 **Q[Number]: [Question text including marks]**
 
 [Your answer matching the depth required by the marks]
@@ -252,25 +268,14 @@ Please provide the answers for all questions. Format your output exactly like th
 
 **Total Marks for this Question**: [Total Marks]
 ---
-
 """
-            return generate_with_local_model(prompt)
-
-        results = [""] * len(chunks)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-            future_to_index = {
-                executor.submit(process_chunk, chunks[i], i * chunk_size + 1): i
-                for i in range(len(chunks))
-            }
-            for future in concurrent.futures.as_completed(future_to_index):
-                idx = future_to_index[future]
-                try:
-                    results[idx] = future.result()
-                except Exception as e:
-                    results[idx] = f"Error generating answers for some questions: {e}\n\n"
-        
-        for res in results:
-            final_answer_key += res.strip() + "\n\n"
+            try:
+                res = generate_with_local_model(prompt)
+                final_answer_key += res.strip() + "\n\n"
+            except Exception as e:
+                # Fallback for the chunk if error occurs
+                for i, q in enumerate(chunk, start=chunk_idx * chunk_size + 1):
+                    final_answer_key += f"**Q{i}: {q}**\nnot found in the textbook.\n---\n\n"
 
         return jsonify({"response": final_answer_key}), 200
 
@@ -306,7 +311,7 @@ def evaluate_sheet():
         else:
             questions_rubrics = [answer_key]
             
-        chunk_size = 2 # Reduced to 2 to prevent the AI from skipping questions
+        chunk_size = 10 # Increased to 10 to stay within daily rate limits
         chunks = [questions_rubrics[i:i + chunk_size] for i in range(0, len(questions_rubrics), chunk_size)]
         
         def evaluate_chunk(chunk):
@@ -329,14 +334,15 @@ EVALUATION STRICTNESS LEVEL: {strictness}
 GRADING RULE:
 1. You MUST evaluate EVERY SINGLE question provided in the QUESTIONS & RUBRICS section above. Do not skip any question.
 2. If the student did not answer a question, award 0 marks and state "Not answered".
-3. CRITICAL: You MUST strictly adhere to the total marks specified in the ANSWER KEY. Do NOT invent or change the total marks.
+3. CRITICAL: You MUST strictly adhere to the total marks specified in the question text or rubric (e.g., [5 Marks] or similar). Do NOT invent or change the total marks.
 4. The marks awarded CANNOT exceed the total marks allocated for that question.
+5. If the answer key says "not found in the textbook." for a question, check if the student has answered it. If the student's answer is academically correct and accurate, award marks accordingly. If the student's answer is incorrect, partial, or missing, award 0 or partial marks.
 
 OUTPUT FORMAT:
 Generate a markdown formatted evaluation report.
 For EACH question, you MUST output EXACTLY this format (do not deviate):
 **Q[Number]**: 
-- **Marks Awarded**: [X] / [Total Marks]
+- **Marks Awarded**: [Awarded Marks] / [Total Marks]
 - **Feedback**: [Detailed feedback explaining why marks were awarded or deducted.]
 
 DO NOT provide a Total Score at the end. Only evaluate the questions provided in this specific chunk.
@@ -348,20 +354,18 @@ DO NOT provide a Total Score at the end. Only evaluate the questions provided in
                 except Exception as e:
                     if attempt == 2:
                         return f"**Q[Unknown]**:\n- **Marks Awarded**: 0 / 0\n- **Feedback**: Error evaluating this chunk: {str(e)}\n\n"
-                    time.sleep(2)
+                    time.sleep(5)
 
-        results = [""] * len(chunks)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-            future_to_index = {
-                executor.submit(evaluate_chunk, chunks[i]): i
-                for i in range(len(chunks))
-            }
-            for future in concurrent.futures.as_completed(future_to_index):
-                idx = future_to_index[future]
-                try:
-                    results[idx] = future.result()
-                except Exception as e:
-                    results[idx] = f"Error evaluating some questions: {e}\n\n"
+        results = []
+        for i, chunk in enumerate(chunks):
+            if i > 0:
+                import time
+                time.sleep(4.5)  # Stay below 15 RPM rate limit
+            try:
+                res = evaluate_chunk(chunk)
+                results.append(res)
+            except Exception as e:
+                results.append(f"Error evaluating some questions: {e}\n\n")
                     
         full_evaluation_report = "## Evaluation Report\n\n"
         for res in results:
@@ -371,8 +375,16 @@ DO NOT provide a Total Score at the end. Only evaluate the questions provided in
         total_awarded = 0.0
         total_possible = 0.0
         
-        # More robust regex to catch variations like "2 / 5", "2/5", "2 out of 5", "[2] / [5]", "**2** / **5**"
-        matches = re.findall(r"\*\*Marks Awarded\*\*\s*:\s*\*?\[?([\d\.]+)\]?\*?\s*(?:/|out of)\s*\*?\[?([\d\.]+)\]?\*?", full_evaluation_report, re.IGNORECASE)
+        # Extremely robust regex to catch variations in bolding, brackets, spaces, and case
+        matches = re.findall(r"\*?\*?Marks Awarded\*?\*?\s*:\s*\*?\[?([\d\.]+)\]?\*?\s*(?:/|out of)\s*\*?\[?([\d\.]+)\]?\*?", full_evaluation_report, re.IGNORECASE)
+        
+        # Fallback line-by-line parsing if regex fails to find any matches
+        if not matches:
+            for line in full_evaluation_report.splitlines():
+                if "marks awarded" in line.lower():
+                    nums = re.findall(r"([\d\.]+)", line)
+                    if len(nums) >= 2:
+                        matches.append((nums[0], nums[1]))
         
         for awarded, possible in matches:
             try:
