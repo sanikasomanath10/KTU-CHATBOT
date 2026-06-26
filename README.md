@@ -2,180 +2,129 @@
 
 ## Overview
 
-KTU CHATBOT is an AI-powered question-answering system designed to help students learn Industrial Safety concepts efficiently from their study materials.
+**KTU CHATBOT** is an AI-powered assistant and academic evaluation system designed to help students learn concepts efficiently from their study materials and assist educators in automating exam grading. 
 
-The chatbot uses Retrieval-Augmented Generation (RAG) to retrieve relevant content from Industrial Safety notes and generate accurate answers using Google's Gemini model.
+The chatbot uses Retrieval-Augmented Generation (RAG) to retrieve relevant content from uploaded notes/textbooks and generate accurate answers using Google's Gemini API. In addition to standard question answering, the system provides specialized tools for generating structured answer keys from question papers and grading student answer sheets.
 
-The application provides a user-friendly web interface built with Streamlit.
+The application features a modern, responsive web interface built with a **Flask** backend and a polished HTML/CSS/JavaScript frontend.
 
 ---
 
 ## Features
 
-* Ask questions in natural language
-* Retrieval-Augmented Generation (RAG)
-* FAISS vector database for semantic search
-* Gemini 2.5 Flash for answer generation
-* Streamlit-based chat interface
-* Chat history support
-* Clear chat functionality
-* Fast and lightweight deployment
+* **AI-Powered Notes Chatbot**: Ask questions in natural language and receive precise, context-grounded answers.
+* **Retrieval-Augmented Generation (RAG)**: Uses FAISS semantic vector search to retrieve relevant pages from uploaded textbooks to minimize hallucinations.
+* **Dynamic Knowledge Base Uploads**: Upload study materials (PDFs) directly from the browser to automatically rebuild or expand the FAISS vector database.
+* **Answer Key Generator**: Upload an exam question paper PDF to automatically extract questions (with their marks) and generate a suggested answer key based on the textbook notes.
+* **Editable PDF Answer Keys**: Review and customize the generated answer key in the UI before exporting it as a downloadable PDF.
+* **Automated Answer Sheet Evaluator**: Upload a student's answer sheet PDF and evaluate it against the answer key with three selectable grading strictness levels:
+  * **Liberal (Lenient)**: Focuses on core concepts and keywords, giving the student the benefit of the doubt.
+  * **Medium (Standard)**: Balances conceptual understanding with correct terminology.
+  * **Hard (Strict)**: Requires precise terminology and comprehensive points to award full marks.
+* **Programmatic Grading & Reports**: Automatically extracts marks from the AI evaluation to calculate the final total score, percentage, and generates a structured markdown feedback report.
 
 ---
 
 ## Technology Stack
 
-* Python
-* Streamlit
-* Google Gemini API
-* LangChain
-* FAISS
-* Sentence Transformers
-* PyPDF
-
----
-
-## Approach
-
-This chatbot follows a Retrieval-Augmented Generation (RAG) architecture.
-
-### Workflow
-
-1. Industrial Safety PDF notes are loaded.
-2. Text is extracted and divided into chunks.
-3. Chunks are converted into embeddings using the Sentence Transformers model:
-
-   * all-MiniLM-L6-v2
-4. Embeddings are stored inside a FAISS vector database.
-5. When a user asks a question:
-
-   * Relevant chunks are retrieved using semantic similarity search.
-   * Retrieved context is sent to Gemini.
-   * Gemini generates a context-aware answer.
-
-### What Makes This Chatbot Unique
-
-* Answers are grounded in the provided Industrial Safety notes.
-* Reduces hallucination by supplying relevant context.
-* Specifically designed for KTU Industrial Safety syllabus.
-* Lightweight and deployable with minimal resources.
+* **Backend**: Python, Flask
+* **AI/LLM**: Google Gemini API (`google-genai`)
+* **Vector Search & RAG**: FAISS (cpu), LangChain, HuggingFace Embeddings (`all-MiniLM-L6-v2`)
+* **PDF Processing**: PyPDF (`PdfReader`), FPDF (`fpdf` for generating answer key PDFs)
+* **Frontend**: Vanilla HTML5, CSS3 (Modern, responsive layout with glassmorphic elements), JavaScript
 
 ---
 
 ## Project Structure
 
 ```text
-ktu-industrial-safety-chatbot/
+KTU-CHATBOT/
 │
-├── app.py
-├── chatbot.py
-├── requirements.txt
-├── README.md
-├── data/
+├── app.py                  # Main Flask application server & endpoints
+├── chatbot.py              # CLI version of the RAG chatbot
+├── build_vector_db.py      # Script to manually build vector database from local data
+├── requirements.txt        # Project package dependencies
+├── README.md               # Project documentation
+├── .env                    # Environment variables (Gemini API Key)
+│
+├── templates/
+│   └── index.html          # Web UI interface
+│
+├── static/
+│   ├── css/
+│   │   └── style.css       # Page styles and UI formatting
+│   └── js/
+│       └── main.js         # Frontend interactive logic (Chat, Uploads, Evaluator)
+│
+├── data/                   # Directory containing textbook PDFs
 │   └── industry_module1.pdf
 │
-└── vector_db/
+└── vector_db/              # Generated FAISS vector index files
 ```
+
+---
 
 ## Installation
 
-Clone the repository:
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/sanikasomanath10/KTU-CHATBOT.git
+   cd KTU-CHATBOT
+   ```
 
-```bash
-git clone https://github.com/sanikasomanath10/KTU-CHATBOT.git
+2. **Create a virtual environment**:
+   ```bash
+   python -m venv venv
+   ```
 
-cd KTU-CHATBOT
-```
+3. **Activate the virtual environment**:
+   * **Windows**:
+     ```bash
+     venv\Scripts\activate
+     ```
+   * **macOS/Linux**:
+     ```bash
+     source venv/bin/activate
+     ```
 
-Create virtual environment:
+4. **Install dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-```bash
-python -m venv venv
-```
-
-Activate virtual environment:
-
-Windows:
-
-```bash
-venv\Scripts\activate
-```
-
-Install dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
----
-
-## Running the Chatbot
-
-Run the Streamlit application:
-
-```bash
-streamlit run app.py
-```
-
-Open:
-
-```text
-http://localhost:8501
-```
+5. **Configure environment variables**:
+   Create a `.env` file in the root directory and add your Google Gemini API key:
+   ```env
+   GEMINI_API_KEY=your_gemini_api_key_here
+   ```
 
 ---
 
-## Challenges Faced
+## Running the Application
 
-### 1. Poor Answer Retrieval
+1. **Start the Flask server**:
+   ```bash
+   python app.py
+   ```
 
-Initially the chatbot failed to answer certain questions even though the information existed in the notes.
-
-Solution:
-
-* Increased retrieved chunks.
-* Improved prompt design.
-* Added context-based answering instructions.
-
-### 2. Streamlit Blank Page Issue
-
-The first Streamlit version displayed a blank page because the file contained only backend code and lacked Streamlit UI components.
-
-Solution:
-
-* Rebuilt the interface using Streamlit widgets and chat components.
-
-### 3. Dependency Issues
-
-Several package compatibility issues occurred while installing sentence-transformers, torch, and torchvision.
-
-Solution:
-
-* Installed compatible versions of the required libraries.
-* Verified environment setup using a dedicated virtual environment.
+2. **Access the application**:
+   Open your browser and navigate to:
+   ```text
+   http://127.0.0.1:5000
+   ```
 
 ---
 
-## Future Improvements
+## How It Works (RAG Pipeline)
 
-* Multi-PDF support
-* Voice-based interaction
-* Module-wise filtering
-* PDF upload through UI
-* Support for multiple KTU subjects
-
----
-
-## Demo
-<img width="1917" height="1011" alt="Screenshot 2026-06-17 124638" src="https://github.com/user-attachments/assets/910106c5-ac7d-43e8-ac2f-76745b6d1ca9" />
-<img width="1897" height="1017" alt="Screenshot 2026-06-17 124835" src="https://github.com/user-attachments/assets/c2366f80-9ee2-4371-8488-f7ccd5186f21" />
+1. **PDF Text Extraction**: Study materials and uploaded textbooks are parsed page-by-page.
+2. **Text Chunking**: Text is split into chunks of 1500 characters with a 200-character overlap using LangChain's `RecursiveCharacterTextSplitter`.
+3. **Embeddings & Vector Indexing**: Text chunks are converted into dense vector embeddings using the Sentence Transformers `all-MiniLM-L6-v2` model and saved locally in a FAISS index.
+4. **Contextual Retrieval**: User questions are matched against the FAISS index using cosine similarity to retrieve the top matching text chunks.
+5. **Response Generation**: The retrieved text chunks are injected as context into a structured prompt sent to the Gemini model (`gemini-2.5-flash`) to generate a factual, context-constrained answer.
 
 ---
 
-## Author
+## Authors
 
-Alka A.S.
-
-B.Tech Computer Science and Engineering
-
-Government Engineering College Sreekrishnapuram
+* **Alka A.S.** - *B.Tech Computer Science and Engineering, Government Engineering College Sreekrishnapuram*
